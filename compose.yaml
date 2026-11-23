@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: local-orders
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: orders
+      RABBITMQ_DEFAULT_PASS: local-rabbit
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  orders:
+    image: orders-demo:local
+    build: .
+    command: ["com.example.orders.OrdersApplication"]
+    environment: &app-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orders
+      SPRING_DATASOURCE_USERNAME: orders
+      SPRING_DATASOURCE_PASSWORD: local-orders
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: orders
+      SPRING_RABBITMQ_PASSWORD: local-rabbit
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck: &app-healthcheck
+      test: ["CMD-SHELL", "curl -fsS http://localhost:$${SERVER_PORT:-8080}/healthz/ready >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+  catalog:
+    image: orders-demo:local
+    build: .
+    command: ["com.example.orders.CatalogApplication"]
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    restart: unless-stopped
+  worker:
+    image: orders-demo:local
+    build: .
+    command: ["com.example.orders.WorkerApplication"]
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+    restart: unless-stopped
+  ui:
+    image: orders-ui:local
+    build: ./ui
+    environment:
+      CATALOG_API_URL: http://catalog:8080
+      ORDERS_API_URL: http://orders:8080
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      catalog:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 8s
+      retries: 5
+    restart: unless-stopped
+volumes:
+  postgres-data:
+  rabbitmq-data:
