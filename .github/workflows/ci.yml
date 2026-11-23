@@ -41,6 +41,6 @@ jobs:
       environment: prod
       values: |
         api:
-          imageTag: "api-${{ needs.build-api.outputs.sha-tag }}"
+          imageTag: "${{ needs.build-api.outputs.sha-tag }}"
         ui:
-          imageTag: "ui-${{ needs.build-ui.outputs.sha-tag }}"
+          imageTag: "${{ needs.build-ui.outputs.sha-tag }}"
